@@ -8,7 +8,7 @@ Created on Mon Dec 11 16:36:10 2017
 
 import numpy as np
 import sympy as sp
-import logging, sys
+import logging
 
 
 class ExtendedKalmanFilter:
