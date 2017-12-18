@@ -7,7 +7,7 @@ Created on Mon Dec 11 16:36:10 2017
 """
 
 import numpy as np
-import logging, sys
+import logging
 
 
 class KalmanFilter:
@@ -34,8 +34,11 @@ class KalmanFilter:
            # cause the state to change.
            # Size n x l
   
-  likelihood = np.array([])
+  likelihood = []  # Not part of core algorithm.  Likelihood gives insight into
+                   # the stability of the filter over time.
   
+  # Define logging so that the user can get debug style feedback when the 
+  # filter updates at each step
   logger = logging.getLogger()
   handler = logging.StreamHandler()
   formatter = logging.Formatter('%(message)s')
@@ -44,18 +47,11 @@ class KalmanFilter:
   
   
   def __init__(self,A,R,H,P,B):
-    n = np.size(A,0)
-    m = np.size(R,0)
-
     self.A = A
     self.R = R
     self.H = H
     self.P = P
     self.B = B
-
-    self.x = np.array(np.zeros(n))
-    self.K = np.array(np.zeros((n,m)))
-    self.likelihood = np.array(np.zeros(n))
 
 
   # At each iteration a measurement z and a control input u are provided
@@ -73,7 +69,8 @@ class KalmanFilter:
     self.logger.info(" Filter gain: %r", self.K)
 
     # Make a new state prediction
-    self.x = xP + np.dot(self.K, ( z - np.dot(self.H, xP)))
+    innov = z - np.dot(self.H,xP)
+    self.x = xP + np.dot(self.K, innov)
     self.logger.info(" Updated state estimate: %r", self.x)
 
     # Update the state covariance matrix
@@ -81,9 +78,10 @@ class KalmanFilter:
     self.logger.info(" Updated state covariance estimate: %r", self.P)
 
     # Kalman filter stability scoring
-    innov = z - np.dot(self.H,xP)
     innovCov = np.dot(self.H, np.dot(pP, np.transpose(self.H))) + self.R
-    self.likelihood = np.exp(-0.5 * np.transpose(innov) * np.dot(np.linalg.inv(innovCov), innov)) / (np.sqrt(np.power(2*np.pi,3) * np.linalg.det(innovCov)))
+    self.likelihood = np.exp(-0.5 * np.dot(np.transpose(innov), \
+                      np.dot(np.linalg.inv(innovCov), innov))) / \
+                      (np.sqrt((2*np.pi)**3 * np.linalg.det(innovCov)))
 
 
   def initialize(self,initStates,debug):

@@ -15,29 +15,35 @@ class UnscentedKalmanFilter:
   
   x = []   # Kalman filter predictions.  Updated each filter iteration (step).
            # Size n
-  R = []   # Measurement noise covariance matrix.  Generally held as a constant and not updated over
-           # time (steps).
+  R = []   # Measurement noise covariance matrix.  Generally held as a constant
+           # and not updated over time (steps).
            # Size m x m
-  A = []   # Difference equation, relates the state at the previous step to the state at the 
-           # current step.  This is a constant, the relationship between the current and the next 
-           # state does not vary over time (steps).
+  a = []   # Generic non-linear difference equation, relates the state at the 
+           # previous step to the state at the current step.  This generally
+           # does not change over time.  If the equation is linear, this 
+           # effectively devolves into classic KF 'A' matrix
+  h = []   # Generic non-linear equation relating the state to the measurements
+           # This generally does not change over time.  If the equation is 
+           # linear, this effectively devolves into classic KF 'H' matrix.
+  P = []   # Estimate error (states) covariance matrix.  This is calculated/ 
+           # updated at each step.
            # Size n x n
-  H = []   # Measurement equation that relates the state to the measurements.  Since the measurement
-           # has a non-linear relationship to the state, this is a Jacobian matrix for the function 
-           # relating the measurements to the state.  This is updated/calculated at each step.
-           # Size m x n
-  h = []   # Non-linear equation relating the state to the measurements
-  P = []   # Estimate error (states) covariance matrix.  This is calculated/updated at each step.
-           # Size n x n
-  K = []   # Kalman filter gain or "blending" factor that minimizes the a-posteriori error 
-           # covariance.  This is calculated/updated at each step.
+  K = []   # Kalman filter gain or "blending" factor that minimizes the 
+           # a-posteriori error covariance.  This is updated at each step.
            # Size n x m
-  B = []   # This matrix relates the control input to the state.  Movement of the platform will
-           # cause the state to change.
+  B = []   # This matrix relates the control input to the state. 
+           # Ex. Movement of the platform will cause the state to change.
            # Size n x l
+  mW = []  # Mean estimate sigma point weighting vectors
+           # Size 2 x n + 1
+  cW = []  # Coveriance estimate sigma point weighting vectors
+           # Size 2 x n + 1
   
-  likelihood = np.array([])
-  
+  likelihood = []  # Not part of core algorithm.  Likelihood gives insight into
+                   # the stability of the filter over time.
+
+  # Define logging so that the user can get debug style feedback when the 
+  # filter updates at each step
   logger = logging.getLogger()
   handler = logging.StreamHandler()
   formatter = logging.Formatter('%(message)s')
@@ -45,22 +51,10 @@ class UnscentedKalmanFilter:
   logger.addHandler(handler)
 
 
-  def __init__(self,A,R,H,P,B):
-    n = np.size(A,0)
-    m = np.size(R,0)
-
-    self.A = A
+  def __init__(self,R,P,B):
     self.R = R
-    self.H = H
     self.P = P
     self.B = B
-
-    self.x = np.array(np.zeros(n))
-    self.K = np.array(np.zeros((n,m)))
-    self.c = []
-    self.mW = [];
-    self.cW = [];
-    self.likelihood = np.array(np.zeros(n))
 
 
   # At each iteration a measurement z and a control input u are provided
@@ -94,11 +88,11 @@ class UnscentedKalmanFilter:
     # -------------------------------------------------------------------------
     # Measurement updates
     #--------------------------------------------------------------------------
-    # Calculate the innovation (residual of measurement vs state estimated measurement)
+    # Calculate the innovation which is the residual of the measurement vs the
+    # state estimate of measurement.
     innov = z - transMeasEst
     self.logger.info(" Innovation: %r", innov)
-    # Calculate the transformed cross-covariance between the state and the 
-    # measurements
+    # Calculate transformed cross-covariance between the state and measurements
     transCrossCov = np.dot(transXSigmaPtsDiff, \
                            np.dot(np.diag(self.cW), np.transpose(transMeasDiff)))
     
@@ -121,8 +115,8 @@ class UnscentedKalmanFilter:
     # of the filter
     innovCov = transMeasCov
     # Kalman filter stability scoring
-    self.likelihood = np.exp(-0.5 * np.transpose(innov) * \
-                      np.dot(np.linalg.inv(innovCov), innov)) / \
+    self.likelihood = np.exp(-0.5 * np.dot(np.transpose(innov), \
+                      np.dot(np.linalg.inv(innovCov), innov))) / \
                       (np.sqrt((2*np.pi)**3 * np.linalg.det(innovCov)))
 
 
@@ -162,7 +156,7 @@ class UnscentedKalmanFilter:
       numStates = 1
     
     # Create some variables for the UKF.  These variables are tunable but the
-    # defaults work well for gaussian distributions
+    # defaults work well (optimally?) for gaussian distributions
     alpha = 1e-3
     ki = 0
     beta = 2
@@ -174,24 +168,6 @@ class UnscentedKalmanFilter:
     self.cW = self.mW
     self.cW[0] = self.cW[0] + (1-alpha**2+beta)
     self.c = np.sqrt(c)
-
-
-  def EvalFunc(self,func,inputs):
-    
-    rows = len(func)
-    
-    funcEval = np.array([[0.]] * rows)
-    for row in range(0,rows):
-      # Evaluate the functions
-      # Use the splat operator to split the input list into individual input
-      # params to the symbolically defined equation
-      tmp = func[row](*inputs)
-      if hasattr(tmp, "__len__"):
-        funcEval[row][0] = tmp[0]
-      else:
-        funcEval[row][0] = tmp
-
-    return funcEval
 
 
   def CreateSigmaPts(self,state,cov,c):
@@ -209,8 +185,11 @@ class UnscentedKalmanFilter:
       numStates = 1;
     
     # Choleski decomp is equivalent to taking the sqrt of a matrix
-    A = c * np.transpose(np.linalg.cholesky(cov))
+    A = c * np.linalg.cholesky(cov)
+    # Create copies of the state points
     Y = np.tile(state,(1,numStates))
+    # Perturb the copies of the state based on the covariance to  create very 
+    # specific sigma points to sample distribution
     X = np.hstack((state,Y+A,Y-A))
     return X
     
