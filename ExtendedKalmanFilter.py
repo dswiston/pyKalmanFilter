@@ -48,10 +48,9 @@ class ExtendedKalmanFilter:
   logger.addHandler(handler)
 
   
-  def __init__(self,A,R,H,P,B):
+  def __init__(self,A,R,P,B):
     self.A = A
     self.R = R
-    self.H = H
     self.P = P
     self.B = B
 
