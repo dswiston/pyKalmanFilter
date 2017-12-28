@@ -38,7 +38,7 @@ class UnscentedKalmanFilter:
            # Size 2 x n + 1
   cW = []  # Coveriance estimate sigma point weighting vectors
            # Size 2 x n + 1
-  
+  innov = []
   likelihood = []  # Not part of core algorithm.  Likelihood gives insight into
                    # the stability of the filter over time.
 
@@ -90,8 +90,8 @@ class UnscentedKalmanFilter:
     #--------------------------------------------------------------------------
     # Calculate the innovation which is the residual of the measurement vs the
     # state estimate of measurement.
-    innov = z - transMeasEst
-    self.logger.info(" Innovation: %r", innov)
+    self.innov = z - transMeasEst
+    self.logger.info(" Innovation: %r", self.innov)
     # Calculate transformed cross-covariance between the state and measurements
     transCrossCov = np.dot(transXSigmaPtsDiff, \
                            np.dot(np.diag(self.cW), np.transpose(transMeasDiff)))
@@ -101,7 +101,7 @@ class UnscentedKalmanFilter:
     self.logger.info(" Kalman filter gain: %r", self.K)
     
     # Make a new state prediction
-    self.x = xP + np.dot(self.K, innov)
+    self.x = xP + np.dot(self.K, self.innov)
     self.logger.info(" Updated state estimate: %r", self.x)
     
     # Update the state covariance matrix
@@ -115,8 +115,8 @@ class UnscentedKalmanFilter:
     # of the filter
     innovCov = transMeasCov
     # Kalman filter stability scoring
-    self.likelihood = np.exp(-0.5 * np.dot(np.transpose(innov), \
-                      np.dot(np.linalg.inv(innovCov), innov))) / \
+    self.likelihood = np.exp(-0.5 * np.dot(np.transpose(self.innov), \
+                      np.dot(np.linalg.inv(innovCov), self.innov))) / \
                       (np.sqrt((2*np.pi)**3 * np.linalg.det(innovCov)))
 
 
@@ -158,14 +158,14 @@ class UnscentedKalmanFilter:
     # Create some variables for the UKF.  These variables are tunable but the
     # defaults work well (optimally?) for gaussian distributions
     alpha = 1e-3
-    ki = 0
-    beta = 2
+    ki = 0.0
+    beta = 2.0
     
     # Use the defined variables to calculate weights and scaling factors
     lam = alpha**2 * (numStates+ki) - numStates
     c = numStates + lam
     self.mW = np.hstack((lam/c, 0.5/c+np.zeros(2*numStates)))
-    self.cW = self.mW
+    self.cW = np.hstack((lam/c, 0.5/c+np.zeros(2*numStates)))
     self.cW[0] = self.cW[0] + (1-alpha**2+beta)
     self.c = np.sqrt(c)
 
@@ -188,7 +188,7 @@ class UnscentedKalmanFilter:
     A = c * np.linalg.cholesky(cov)
     # Create copies of the state points
     Y = np.tile(state,(1,numStates))
-    # Perturb the copies of the state based on the covariance to  create very 
+    # Perturb the copies of the state based on the covariance to create very 
     # specific sigma points to sample distribution
     X = np.hstack((state,Y+A,Y-A))
     return X
@@ -227,9 +227,7 @@ class UnscentedKalmanFilter:
         Y[eqNdx,ndx] = func[eqNdx](*sigmaPts[:,ndx])
       # Add weighted contribution of the transformed sigma to the transformed
       # mean
-      y = y + mW[ndx] * Y[:,[ndx]]
-    # Currently a hack!! <------------- Need to fix/understand why
-    y = y / 4
+      y += mW[ndx] * Y[:,[ndx]]
 
     # Create the transformed different matrix, this quantifies how different
     # each sigma point's measurement is from the transformed mean
